@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Game Jam</title>
+  <link rel="stylesheet" href="style.css" />
+  <!-- face-api.js: real-time facial emotion scoring -->
+  <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
+</head>
+<body>
+  <!-- Home -->
+  <section id="home" class="view">
+    <div class="center">
+      <h1>🦒 Game Jam</h1>
+      <div class="model-picker">
+        <label>Realtime seg (live mask + CLIP input)
+          <select id="segModel">
+            <option value="yolo" selected>YOLO (yolo26n-seg)</option>
+          </select>
+        </label>
+        <label>CLIP (classification)
+          <select id="clipModel">
+            <option value="clip-vit-base-patch32" selected>CLIP ViT-B/32</option>
+          </select>
+        </label>
+        <label>Emotion
+          <select id="emotionModel">
+            <option value="faceapi" selected>face-api expressions</option>
+          </select>
+        </label>
+      </div>
+      <button id="startBtn" class="primary big">Start</button>
+    </div>
+  </section>
+
+  <!-- Scoring scene: 2-player split (left/right halves), each scored separately -->
+  <section id="camera" class="view hidden">
+    <!-- shared target (noun + emotion) -->
+    <div class="vs-targets" id="vsTargets">
+      <input id="nounTarget" value="mushroom" />
+      <span class="sp-plus">+</span>
+      <select id="emoTarget">
+        <option value="angry" selected>angry</option>
+        <option value="happy">happy</option>
+        <option value="sad">sad</option>
+        <option value="surprised">surprised</option>
+        <option value="fearful">fearful</option>
+        <option value="disgusted">disgusted</option>
+        <option value="neutral">neutral</option>
+      </select>
+      <span class="sp-formula">score = class × 2 + emotion × 1</span>
+      <span id="scoreStatus" class="sp-status"></span>
+    </div>
+
+    <!-- live 2-player split: left half | right half, each with its mask in the corner -->
+    <div class="vs-row" id="vsRow">
+      <figure class="vs-col">
+        <figcaption>Player 1</figcaption>
+        <div class="vs-scores">Class <b id="classScoreL">--</b> · Emo <b id="emoScoreL">--</b> · Total <b id="totalScoreL">--</b></div>
+        <div class="cam-stage">
+          <canvas id="camL"></canvas>
+          <canvas id="maskL" class="corner-half"></canvas>
+        </div>
+      </figure>
+      <figure class="vs-col">
+        <figcaption>Player 2</figcaption>
+        <div class="vs-scores">Class <b id="classScoreR">--</b> · Emo <b id="emoScoreR">--</b> · Total <b id="totalScoreR">--</b></div>
+        <div class="cam-stage">
+          <canvas id="camR"></canvas>
+          <canvas id="maskR" class="corner-half"></canvas>
+        </div>
+      </figure>
+    </div>
+
+    <!-- offscreen decoding source the split halves are drawn from
+         (kept rendered in-viewport so Chromium keeps decoding frames) -->
+    <video id="preview" autoplay playsinline muted class="src-video"></video>
+
+    <div class="controls">
+      <label id="recordCtl">Record <input id="delay" type="number" min="0" max="15" value="5" step="1" /> s</label>
+      <button id="shootBtn" class="primary">Capture</button>
+      <button id="retakeBtn" class="hidden">Retake</button>
+      <button id="backBtn" class="ghost">Back</button>
+    </div>
+    <p id="camStatus" class="status"></p>
+  </section>
+
+  <script type="module" src="scoring.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

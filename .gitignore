@@ -1,0 +1,17 @@
+# secrets — never commit / share
+.fal_key
+
+# personal captures & generated output
+temp/
+test/
+
+# model weights (auto-downloaded on first run)
+*.pt
+*.onnx
+
+# local tooling / editor state
+.claude/
+
+# python cache
+__pycache__/
+*.pyc
