@@ -91,6 +91,43 @@ def generate_in_mask(image: Image.Image, mask: Image.Image, prompt: str,
     return rgba
 
 
+def generate_img2img(image: Image.Image, prompt: str, strength: float, seed: int,
+                     max_size: int = 1024,
+                     endpoint: str = "fal-ai/flux/dev/image-to-image") -> Image.Image:
+    """One img2img pass: transform `image` toward `prompt` by `strength` in [0, 1]."""
+    import fal_client
+
+    _ensure_fal_key()
+    image = image.convert("RGB")
+    W, H = image.size
+    scale = min(1.0, max_size / max(W, H))
+    img_s = image.resize((round(W * scale), round(H * scale)), Image.LANCZOS) if scale < 1.0 else image
+    url = fal_client.upload(_png_bytes(img_s), "image/png")
+    result = fal_client.subscribe(endpoint, arguments={
+        "image_url": url, "prompt": prompt, "strength": float(strength),
+        "num_inference_steps": 28, "seed": int(seed), "output_format": "png",
+    }, with_logs=False)
+    data = urllib.request.urlopen(result["images"][0]["url"]).read()
+    return Image.open(io.BytesIO(data)).convert("RGB").resize(image.size, Image.LANCZOS)
+
+
+def latent_frames(image: Image.Image, mask: Image.Image, prompt: str, steps: int = 8,
+                  seed: int = 12345, max_size: int = 1024,
+                  endpoint: str = "fal-ai/flux/dev/image-to-image"):
+    """Model-generated keyframes: the source progressively transformed toward `prompt`
+    via img2img at increasing strength (fixed seed for coherence), each cut to the mask.
+    Returns [source, gen@s1, gen@s2, ...] as RGBA."""
+    mask = mask.convert("L").resize(image.size, Image.NEAREST)
+    src = image.convert("RGBA"); src.putalpha(mask)
+    frames = [src]
+    for i, s in enumerate(np.linspace(0.3, 0.95, steps)):
+        print(f"[morph] latent keyframe {i + 1}/{steps} (strength {s:.2f})…", flush=True)
+        g = generate_img2img(image, prompt, float(s), seed, max_size, endpoint).convert("RGBA")
+        g.putalpha(mask)
+        frames.append(g)
+    return frames
+
+
 # ----------------------------- morphing -----------------------------
 def _smoothstep(t: float) -> float:
     return t * t * (3.0 - 2.0 * t)
@@ -142,6 +179,21 @@ def _morph_frames(src: Image.Image, dst: Image.Image, n: int, method: str):
     return frames
 
 
+def _tween(frames, k: int):
+    """Insert k eased cross-fade frames between each consecutive pair (smooths keyframes)."""
+    if k <= 0 or len(frames) < 2:
+        return frames
+    out = []
+    for i in range(len(frames) - 1):
+        a = np.asarray(frames[i].convert("RGBA"), np.float32)
+        b = np.asarray(frames[i + 1].convert("RGBA"), np.float32)
+        for j in range(k + 1):
+            tt = _smoothstep(j / (k + 1))
+            out.append(Image.fromarray(np.clip((1 - tt) * a + tt * b, 0, 255).astype(np.uint8), "RGBA"))
+    out.append(frames[-1])
+    return out
+
+
 # ----------------------------- GIF output -----------------------------
 def _rgba_to_p_transparent(im: Image.Image) -> Image.Image:
     """RGBA -> P with index 255 as the transparent color (alpha < 128 becomes transparent)."""
@@ -171,17 +223,19 @@ def _save_gif(frames, out_path, duration_ms, background, loop, ping_pong, hold):
 
 # ----------------------------- public API -----------------------------
 def morph_gif(image_path, mask_path, keywords, out_path=None, frames=24, fps=20,
-              method="dissolve", background=None, ping_pong=True, hold=6,
-              max_size=1024, mask_source=True, prompt_template="{prompt}"):
+              method="flow", background=None, ping_pong=True, hold=6,
+              max_size=1024, mask_source=True, prompt_template="{prompt}",
+              target=None, latent_steps=8, latent_tween=3, seed=12345):
     """Generate a keyword creature inside the mask and morph the subject into it.
 
-    image_path / mask_path : the segmented photo and its (hole-filled) mask.
-    keywords               : ("angry", "mushroom") or "angry mushroom".
-    out_path               : output .gif (defaults next to the image).
-    method                 : "dissolve" (cross-fade) or "flow" (optical-flow warp morph).
-    background             : None for a transparent GIF, or (r, g, b) for a solid backdrop.
-    mask_source            : apply the mask to the source too (subject on transparent bg).
-    Returns the gif path; also writes "<gif>_generated.png" (the transparent cutout).
+    method:
+      "dissolve" — per-pixel opacity cross-fade to the FLUX-Fill target (no model).
+      "flow"     — optical-flow warp + blend to the FLUX-Fill target (classical CV).
+      "latent"   — model keyframes: img2img transforms the subject toward the prompt,
+                   each frame diffusion-generated (light cross-fade tween between them).
+    target       : a precomputed RGBA cutout to reuse (skips the FLUX-Fill call); ignored
+                   for "latent". background=None -> transparent GIF, or (r,g,b) for a solid.
+    Returns the gif path; also writes "<gif>_generated.png".
     """
     image_path, mask_path = Path(image_path), Path(mask_path)
     image = Image.open(image_path).convert("RGB")
@@ -190,25 +244,29 @@ def morph_gif(image_path, mask_path, keywords, out_path=None, frames=24, fps=20,
     prompt = " ".join(map(str, keywords)) if isinstance(keywords, (list, tuple)) else str(keywords)
     prompt = prompt_template.format(prompt=prompt)
 
-    print(f"[morph] generating '{prompt}' inside the mask via FLUX Fill…", flush=True)
-    generated = generate_in_mask(image, mask, prompt, max_size=max_size)
-
-    src = image.convert("RGBA")
-    if mask_source:
-        src.putalpha(mask)  # subject on a transparent background, same silhouette as the target
-
-    print(f"[morph] building {frames} frames (method={method})…", flush=True)
-    frames_list = _morph_frames(src, generated, frames, method)
+    if method == "latent":
+        print(f"[morph] latent: {latent_steps} model keyframes for '{prompt}'…", flush=True)
+        keyframes = latent_frames(image, mask, prompt, latent_steps, seed, max_size)
+        generated = keyframes[-1]
+        frames_list = _tween(keyframes, latent_tween)
+    else:
+        if target is not None:
+            generated = target.convert("RGBA").resize(image.size, Image.LANCZOS)
+        else:
+            print(f"[morph] generating '{prompt}' inside the mask via FLUX Fill…", flush=True)
+            generated = generate_in_mask(image, mask, prompt, max_size=max_size)
+        src = image.convert("RGBA")
+        if mask_source:
+            src.putalpha(mask)  # subject on a transparent background, same silhouette
+        print(f"[morph] building {frames} frames (method={method})…", flush=True)
+        frames_list = _morph_frames(src, generated, frames, method)
 
     if out_path is None:
-        out_path = image_path.with_name(f"morph_{prompt.replace(' ', '_')}.gif")
+        out_path = image_path.with_name(f"morph_{method}_{prompt.replace(' ', '_')}.gif")
     out_path = Path(out_path)
-    gen_path = out_path.with_name(out_path.stem + "_generated.png")
-    generated.save(gen_path)
-
+    generated.save(out_path.with_name(out_path.stem + "_generated.png"))
     _save_gif(frames_list, str(out_path), round(1000 / fps), background, 0, ping_pong, hold)
-    print(f"[morph] saved gif:       {out_path}", flush=True)
-    print(f"[morph] saved cutout:    {gen_path}", flush=True)
+    print(f"[morph] saved gif: {out_path}", flush=True)
     return str(out_path)
 
 
