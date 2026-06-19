@@ -1,5 +1,11 @@
 @echo off
-REM Activate your Python environment first (see README.md), then run this,
-REM or just run:  python main.py
-REM If you use conda, you can instead do:  conda run -n <your-env> python "%~dp0main.py"
-python "%~dp0main.py"
+REM Launch the Game Jam app.
+REM Prefers the `gamejam` conda env (if Anaconda is installed in the default
+REM location); otherwise falls back to `python` from your active environment.
+REM %USERPROFILE% keeps this portable — no hard-coded username.
+set "CONDA=%USERPROFILE%\anaconda3\Scripts\conda.exe"
+if exist "%CONDA%" (
+  "%CONDA%" run -n gamejam --no-capture-output python "%~dp0main.py"
+) else (
+  python "%~dp0main.py"
+)

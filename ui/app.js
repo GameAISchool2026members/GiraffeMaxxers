@@ -13,7 +13,9 @@ let stream = null;
 let liveActive = false;     // only drive the live mask + scoring while the camera is live
 let segBusy = false;
 let liveRaf = null;
-let lastYolo = 0;           // throttle YOLO calls (CPU)
+let lastYolo = 0;           // throttle live segmentation calls (CPU)
+let segBackend = 'yolo';    // 'yolo' (Python) | 'mediapipe' (browser); chosen on the Start screen
+let yoloDevice = 'cpu';     // 'cpu' | 'cuda'; chosen on the Start screen (YOLO backend only)
 
 function show(viewId) {
   document.querySelectorAll('.view').forEach((v) => v.classList.add('hidden'));
@@ -32,6 +34,9 @@ async function startCamera() {
     $('preview').srcObject = stream;
     $('camStatus').textContent = 'Camera ready';
     pylog('camera started');
+    segBackend = ($('segModel') && $('segModel').value) || 'yolo';
+    yoloDevice = ($('yoloDevice') && $('yoloDevice').value) || 'cpu';
+    pylog('seg backend: ' + segBackend + ' · device: ' + yoloDevice);
     liveActive = true;
     if (!liveRaf) renderHalves();
     if (window.startScoring) window.startScoring(); // per-half (2-player) scoring
@@ -104,11 +109,56 @@ function drawCamHalf(canvas, v, side) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
 
-// YOLO-segment a cam-half canvas; draw the white-on-black mask into its corner thumbnail.
+/* ---------- MediaPipe Selfie Segmentation (optional browser-side backend) ---------- */
+let mpSeg = null;
+function getMp() {
+  if (!mpSeg && window.SelfieSegmentation) {
+    mpSeg = new SelfieSegmentation({ locateFile: (f) => 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/' + f });
+    mpSeg.setOptions({ modelSelection: 1 });
+  }
+  return mpSeg;
+}
+
+// Run MediaPipe on a canvas; resolve a white-on-black mask data URL (or null on failure).
+function mpSegment(srcCanvas) {
+  const seg = getMp();
+  if (!seg) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; resolve(v); } };
+    const timer = setTimeout(() => finish(null), 5000); // never hang the render loop
+    seg.onResults((res) => {
+      clearTimeout(timer);
+      if (!res || !res.segmentationMask) return finish(null);
+      const w = srcCanvas.width, h = srcCanvas.height;
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      const ctx = c.getContext('2d');
+      ctx.drawImage(res.segmentationMask, 0, 0, w, h);
+      const id = ctx.getImageData(0, 0, w, h), d = id.data;
+      for (let i = 0; i < d.length; i += 4) {   // threshold to white-on-black
+        const v = d[i] > 128 ? 255 : 0;         // person -> white, background -> black
+        d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255;
+      }
+      ctx.putImageData(id, 0, 0);
+      finish(c.toDataURL('image/png'));
+    });
+    try { seg.send({ image: srcCanvas }); } catch (e) { clearTimeout(timer); finish(null); }
+  });
+}
+
+// Segment a cam-half canvas with the chosen backend; draw the white-on-black mask into its corner.
 async function segHalf(camCanvas, maskCanvas) {
   if (!camCanvas.width) return;
+  const fill = !!($('fillHoles') && $('fillHoles').checked); // Start-screen toggle
   try {
-    const url = await window.pywebview.api.yolo_segment(camCanvas.toDataURL('image/jpeg', 0.85));
+    let url;
+    if (segBackend === 'mediapipe') {
+      url = await mpSegment(camCanvas);
+      if (url && fill) url = await window.pywebview.api.fill_mask(url); // reuse the Python hole-fill
+    } else {
+      url = await window.pywebview.api.yolo_segment(camCanvas.toDataURL('image/jpeg', 0.85), fill, yoloDevice);
+    }
+    if (!url) return;
     await new Promise((resolve) => {
       const img = new Image();
       img.onload = () => {
@@ -140,7 +190,7 @@ function renderHalves() {
   if (!stream || !v.videoWidth || !liveActive) return;
   drawCamHalf($('camL'), v, 'L');
   drawCamHalf($('camR'), v, 'R');
-  if (!segBusy && performance.now() - lastYolo > 300) {  // throttle per-half YOLO (CPU)
+  if (!segBusy && performance.now() - lastYolo > 300) {  // throttle per-half segmentation (CPU)
     segBusy = true;
     segBothHalves().finally(() => { segBusy = false; lastYolo = performance.now(); });
   }
@@ -173,4 +223,17 @@ window.addEventListener('DOMContentLoaded', () => {
   $('retakeBtn').addEventListener('click', retake);
   $('backBtn').addEventListener('click', back);
   pylog('ui ready');
+});
+
+// Populate the Start-screen GPU note once the Python API is available.
+window.addEventListener('pywebviewready', () => {
+  try {
+    window.pywebview.api.cuda_info().then((info) => {
+      const note = $('cudaNote');
+      if (!note) return;
+      note.textContent = (info && info.available)
+        ? 'CUDA available: ' + (info.name || 'GPU')
+        : 'CUDA not available (torch ' + ((info && info.torch) || '?') + ') — CPU will be used';
+    }).catch(() => {});
+  } catch (e) { /* api not ready */ }
 });

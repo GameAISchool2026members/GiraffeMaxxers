@@ -76,7 +76,7 @@ class YoloPersonSegmenter:
 
         return best["mask"] > self.config.mask_threshold
 
-    def segment_jpeg_to_mask_png(self, jpeg_bytes: bytes) -> bytes:
+    def segment_jpeg_to_mask_png(self, jpeg_bytes: bytes, fill_holes: bool = False) -> bytes:
         frame = decode_image(jpeg_bytes)
         mask = self.segment_frame(frame)
 
@@ -84,6 +84,9 @@ class YoloPersonSegmenter:
             mask = np.zeros(frame.shape[:2], dtype=np.uint8)
         else:
             mask = mask.astype(np.uint8) * 255
+
+        if fill_holes:
+            mask = fill_enclosed_holes(mask)
 
         return encode_png(mask)
 
@@ -107,17 +110,37 @@ def encode_png(image: np.ndarray) -> bytes:
     return encoded.tobytes()
 
 
+def fill_enclosed_holes(mask: np.ndarray) -> np.ndarray:
+    """Fill background regions fully enclosed by the mask.
+
+    A closed donut becomes a filled disc; a region that still connects to the image
+    border (an open / C-shaped donut) reaches the outside, so it is left untouched.
+    `mask` is uint8 with 0 = background, 255 = foreground; returns the same shape/dtype.
+    """
+    # Pad a 1px background border so the "outside" is always connected — even if the
+    # subject touches a frame edge — then flood the background inward from that border.
+    # Use 8-connectivity so a gap that opens to the edge even through a thin / diagonal
+    # seam still counts as "outside" and is NOT filled; only fully-sealed holes fill.
+    padded = cv2.copyMakeBorder(mask, 1, 1, 1, 1, cv2.BORDER_CONSTANT, value=0)
+    flood = padded.copy()
+    ff_mask = np.zeros((padded.shape[0] + 2, padded.shape[1] + 2), dtype=np.uint8)
+    cv2.floodFill(flood, ff_mask, (0, 0), 255, flags=8)  # bg reachable from the edge -> 255
+    holes = cv2.bitwise_not(flood)              # only the enclosed holes stay 255
+    filled = cv2.bitwise_or(padded, holes)
+    return filled[1:-1, 1:-1]
+
+
 # Optional singleton for server use.
 _segmenter: YoloPersonSegmenter | None = None
 
 
-def get_segmenter() -> YoloPersonSegmenter:
+def get_segmenter(device: str = "cpu") -> YoloPersonSegmenter:
     global _segmenter
 
-    if _segmenter is None:
+    if _segmenter is None or _segmenter.config.device != device:
         config = YoloSegmentationConfig(
             model_path="yolo26n-seg.pt",
-            device="cpu",
+            device=device,
             conf=0.25,
             iou=0.7,
             imgsz=960,
@@ -129,5 +152,5 @@ def get_segmenter() -> YoloPersonSegmenter:
     return _segmenter
 
 
-def segment_jpeg_to_mask_png(jpeg_bytes: bytes) -> bytes:
-    return get_segmenter().segment_jpeg_to_mask_png(jpeg_bytes)
+def segment_jpeg_to_mask_png(jpeg_bytes: bytes, fill_holes: bool = False, device: str = "cpu") -> bytes:
+    return get_segmenter(device).segment_jpeg_to_mask_png(jpeg_bytes, fill_holes)

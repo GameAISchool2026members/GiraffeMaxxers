@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Game Jam</title>
   <link rel="stylesheet" href="style.css" />
+  <!-- MediaPipe Selfie Segmentation: optional real-time mask backend (Start-screen picker) -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js"></script>
   <!-- face-api.js: real-time facial emotion scoring -->
   <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
 </head>
@@ -17,6 +19,7 @@
         <label>Realtime seg (live mask + CLIP input)
           <select id="segModel">
             <option value="yolo" selected>YOLO (yolo26n-seg)</option>
+            <option value="mediapipe">MediaPipe Selfie</option>
           </select>
         </label>
         <label>CLIP (classification)
@@ -29,6 +32,17 @@
             <option value="faceapi" selected>face-api expressions</option>
           </select>
         </label>
+        <label class="check">
+          <input type="checkbox" id="fillHoles" />
+          Fill enclosed holes in mask (closed donut → disc)
+        </label>
+        <label>YOLO device
+          <select id="yoloDevice">
+            <option value="cpu" selected>CPU</option>
+            <option value="cuda">CUDA (GPU)</option>
+          </select>
+        </label>
+        <div id="cudaNote" class="device-note">checking GPU…</div>
       </div>
       <button id="startBtn" class="primary big">Start</button>
     </div>

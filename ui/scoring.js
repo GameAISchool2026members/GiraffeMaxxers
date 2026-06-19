@@ -18,6 +18,11 @@ function pylog(m) {
   } catch (e) { /* api not ready yet */ }
 }
 
+function errStr(e) {
+  if (!e) return "unknown";
+  return (e.name ? e.name + ": " : "") + (e.message || String(e));
+}
+
 let clip = null;
 let faceReady = false;
 let modelsPromise = null;
@@ -39,15 +44,24 @@ function ensureModels() {
       clip = await pipeline("zero-shot-image-classification", "Xenova/clip-vit-base-patch32", { quantized: true });
       pylog("CLIP loaded");
       if (window.faceapi) {
+        if (faceapi.tf) {  // run face-api (tfjs) on the GPU via WebGL — CUDA is Python-only
+          try {
+            await faceapi.tf.setBackend("webgl");
+            await faceapi.tf.ready();
+            pylog("face-api backend: " + faceapi.tf.getBackend());
+          } catch (e) { pylog("face-api backend set failed: " + errStr(e)); }
+        }
         setStatus("Loading face model…");
         pylog("loading face model…");
         await faceapi.nets.tinyFaceDetector.loadFromUri(FACE_MODEL_URL);
         await faceapi.nets.faceExpressionNet.loadFromUri(FACE_MODEL_URL);
         faceReady = true;
         pylog("face model loaded");
+      } else {
+        pylog("WARN window.faceapi missing (face-api script not loaded)");
       }
       setStatus("");
-    })();
+    })().catch((e) => { modelsPromise = null; throw e; }); // don't cache failures — allow retry
   }
   return modelsPromise;
 }
@@ -113,7 +127,11 @@ function updatePanel(side, cls, emoScore) {
 }
 
 async function scoreOnce() {
-  if (busy || paused || !running || !clip) return;
+  if (busy || paused || !running) return;
+  if (!clip) {                       // models not ready (or a load failed) — retry, skip this tick
+    ensureModels().catch(() => {});
+    return;
+  }
   busy = true;
   try {
     for (const side of ["L", "R"]) {
@@ -127,16 +145,10 @@ async function scoreOnce() {
   }
 }
 
-window.startScoring = async () => {
+window.startScoring = () => {
   running = true;
-  try {
-    await ensureModels();
-  } catch (e) {
-    setStatus("model load failed (see console)");
-    console.warn(e);
-    return;
-  }
-  if (!timer) timer = setInterval(scoreOnce, 1500);
+  ensureModels().catch((e) => pylog("startScoring: will retry load — " + errStr(e)));
+  if (!timer) timer = setInterval(scoreOnce, 1500); // ticks retry the load until models are ready
 };
 
 window.stopScoring = () => { running = false; };
@@ -184,4 +196,4 @@ window.recordBest2 = async (seconds) => {
 // Preload models at app launch so they're ready before the user clicks Start.
 ensureModels()
   .then(() => pylog("models preloaded"))
-  .catch((e) => { console.warn("model preload failed", e); pylog("preload failed"); });
+  .catch((e) => { console.warn("model preload failed", e); pylog("preload FAILED: " + errStr(e)); });
