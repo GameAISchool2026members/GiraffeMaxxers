@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Game Jam</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
+</head>
+<body>
+  <div id="effectsLayer" class="effects-layer"></div>
+  <section id="home" class="view">
+    <div class="center">
+      <h1>Game Jam</h1>
+      <div class="model-picker">
+        <label>Realtime seg
+          <select id="segModel">
+            <option value="mediapipe" selected>MediaPipe Selfie</option>
+            <option value="yolo">YOLO fallback</option>
+          </select>
+        </label>
+        <label>CLIP
+          <select id="clipModel">
+            <option value="clip-vit-base-patch32" selected>CLIP ViT-B/32</option>
+          </select>
+        </label>
+        <label>Emotion
+          <select id="emotionModel">
+            <option value="faceapi" selected>face-api expressions</option>
+          </select>
+        </label>
+      </div>
+      <button id="startBtn" class="primary big">Start</button>
+    </div>
+  </section>
+
+  <section id="camera" class="view hidden">
+    <div class="vs-targets challenge-card" id="vsTargets">
+      <span class="challenge-kicker">Challenge</span>
+      <select id="emoTarget">
+        <option value="angry" selected>angry</option>
+        <option value="happy">happy</option>
+        <option value="sad">sad</option>
+        <option value="surprised">surprised</option>
+        <option value="fearful">fearful</option>
+        <option value="disgusted">disgusted</option>
+        <option value="neutral">neutral</option>
+      </select>
+      <span class="sp-plus">+</span>
+      <input id="nounTarget" value="object" spellcheck="false" />
+      <button id="rerollTargetBtn" type="button" class="mini-btn">Reroll</button>
+      <span id="challengeStatus" class="challenge-status">Press Capture to reveal</span>
+      <span class="sp-formula">score 0-100 = class x 2 + expression x 1</span>
+      <span id="scoreStatus" class="sp-status"></span>
+    </div>
+
+    <div class="vs-row" id="vsRow">
+      <figure class="vs-col">
+        <figcaption>Player 1</figcaption>
+        <div class="vs-scores">Class <b id="classScoreL">--</b> / Emo <b id="emoScoreL">--</b> / Total <b id="totalScoreL">--</b></div>
+        <div class="cam-stage">
+          <canvas id="camL"></canvas>
+          <canvas id="maskL" class="corner-half"></canvas>
+        </div>
+      </figure>
+      <figure class="vs-col">
+        <figcaption>Player 2</figcaption>
+        <div class="vs-scores">Class <b id="classScoreR">--</b> / Emo <b id="emoScoreR">--</b> / Total <b id="totalScoreR">--</b></div>
+        <div class="cam-stage">
+          <canvas id="camR"></canvas>
+          <canvas id="maskR" class="corner-half"></canvas>
+        </div>
+      </figure>
+    </div>
+
+    <div class="cam-stage hidden" id="singleStage">
+      <canvas id="camFull"></canvas>
+      <img id="photo" class="hidden" alt="captured" />
+      <div id="countdown" class="countdown hidden"></div>
+    </div>
+
+    <video id="preview" autoplay playsinline muted class="src-video"></video>
+
+    <div class="controls">
+      <label id="recordCtl">Record <input id="delay" type="number" min="0" max="15" value="10" step="1" /> s</label>
+      <button id="shootBtn" class="primary">Capture</button>
+      <button id="uploadBtn">Upload</button>
+      <button id="retakeBtn" class="hidden">Retake</button>
+      <button id="backBtn" class="ghost">Back</button>
+    </div>
+    <p id="camStatus" class="status"></p>
+  </section>
+
+  <section id="end" class="view hidden">
+    <div class="end-card">
+      <div class="end-label">Final Score</div>
+      <div id="finalScore" class="final-score">--</div>
+      <h2 id="finalMessage">You got emotion object Maxed mogged.</h2>
+      <p id="finalBreakdown" class="status"></p>
+    </div>
+    <div class="recap-grid">
+      <article id="teamCardL" class="team-card">
+        <div class="team-card-head">
+          <strong>Player 1</strong>
+          <span id="teamBadgeL" class="winner-badge"></span>
+        </div>
+        <div class="team-media">
+          <figure>
+            <img id="finalImgL" alt="Player 1 final frame" />
+            <figcaption>Frame</figcaption>
+          </figure>
+          <figure>
+            <img id="finalMaskL" alt="Player 1 final mask" />
+            <figcaption>Mask</figcaption>
+          </figure>
+        </div>
+        <div class="team-scores">
+          <span>Raw class <b id="finalClassL">--</b></span>
+          <span>Expression <b id="finalEmoL">--</b></span>
+          <span>Total <b id="finalTotalL">--</b></span>
+        </div>
+      </article>
+      <article id="teamCardR" class="team-card">
+        <div class="team-card-head">
+          <strong>Player 2</strong>
+          <span id="teamBadgeR" class="winner-badge"></span>
+        </div>
+        <div class="team-media">
+          <figure>
+            <img id="finalImgR" alt="Player 2 final frame" />
+            <figcaption>Frame</figcaption>
+          </figure>
+          <figure>
+            <img id="finalMaskR" alt="Player 2 final mask" />
+            <figcaption>Mask</figcaption>
+          </figure>
+        </div>
+        <div class="team-scores">
+          <span>Raw class <b id="finalClassR">--</b></span>
+          <span>Expression <b id="finalEmoR">--</b></span>
+          <span>Total <b id="finalTotalR">--</b></span>
+        </div>
+      </article>
+    </div>
+    <div class="flux-panel">
+      <div class="end-label">Generated People</div>
+      <p id="fluxStatus" class="status">Waiting for BFL.</p>
+      <div class="flux-grid">
+        <figure id="fluxCardL" class="flux-figure hidden">
+          <img id="fluxImgL" alt="Player 1 BFL result" />
+          <figcaption id="fluxCaptionL">Player 1</figcaption>
+        </figure>
+        <figure id="fluxCardR" class="flux-figure hidden">
+          <img id="fluxImgR" alt="Player 2 BFL result" />
+          <figcaption id="fluxCaptionR">Player 2</figcaption>
+        </figure>
+      </div>
+    </div>
+    <div class="controls">
+      <button id="endAgainBtn" class="primary">Play Again</button>
+      <button id="endHomeBtn" class="ghost">Home</button>
+    </div>
+  </section>
+
+  <input id="fileInput" type="file" accept="image/*" class="hidden" />
+  <canvas id="canvas" class="hidden"></canvas>
+  <canvas id="segInput" class="hidden"></canvas>
+
+  <script type="module" src="scoring.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

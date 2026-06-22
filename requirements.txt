@@ -1,0 +1,5 @@
+pywebview
+pillow
+requests
+ultralytics
+opencv-python

@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Game Jam Camera</title>
+  <link rel="stylesheet" href="camera_main.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
+</head>
+<body>
+  <main id="app">
+    <section id="startView" class="start-view">
+      <h1 class="start-title">GiraffeMaxxers</h1>
+      <button id="startBtn" class="start-button" type="button">Start</button>
+      <p id="loadStatus" class="load-status">Create a silhouette based off of the object you are given whilst expressing the emotion.</p>
+    </section>
+
+    <section id="gameView" class="game-view hidden">
+      <h1 id="challengeText" class="challenge-text">
+        Act like a <span id="challengeEmotion" class="challenge-emotion">happy</span>
+        <span id="challengeObject" class="challenge-object">robot</span>
+      </h1>
+      <div id="roundTimer" class="round-timer">15</div>
+
+      <div class="arena">
+        <section class="team-panel team-left">
+          <canvas id="silL" class="silhouette"></canvas>
+          <canvas id="pipL" class="pip pip-left"></canvas>
+          <div class="score-panel score-left">
+            <div class="score-row"><span class="score-label">Shape</span><span id="scoreObjL" class="score-value">0%</span></div>
+            <div class="score-row"><span class="score-label">Emotion</span><span id="scoreEmoL" class="score-value">0%</span></div>
+          </div>
+          <div class="team-label">Player 1</div>
+        </section>
+
+        <section class="team-panel team-right">
+          <canvas id="silR" class="silhouette"></canvas>
+          <canvas id="pipR" class="pip pip-right"></canvas>
+          <div class="score-panel score-right">
+            <div class="score-row"><span class="score-label">Shape</span><span id="scoreObjR" class="score-value">0%</span></div>
+            <div class="score-row"><span class="score-label">Emotion</span><span id="scoreEmoR" class="score-value">0%</span></div>
+          </div>
+          <div class="team-label">Player 2</div>
+        </section>
+      </div>
+
+      <div id="countdown" class="countdown hidden">3</div>
+      <p id="runtimeStatus" class="runtime-status"></p>
+    </section>
+
+    <section id="resultView" class="result-view hidden">
+      <h2 id="resultTitle" class="result-title">
+        Final <span id="resultEmotion" class="challenge-emotion">happy</span>
+        <span id="resultObject" class="challenge-object">robot</span>
+      </h2>
+      <p id="generationStatus" class="generation-status">Generating infilled images...</p>
+      <div class="result-grid">
+        <figure id="resultCardL" class="result-card">
+          <div class="winner-badge">Winner</div>
+          <div id="morphStageL" class="morph-stage">
+            <img id="resultOriginalL" class="morph-img morph-original" alt="Player 1 original result frame" />
+            <img id="resultImgL" class="morph-img morph-generated" alt="Player 1 infilled result" />
+          </div>
+          <figcaption>
+            <span class="result-player-name">Player 1</span>
+            <span class="result-scores">
+              <span class="result-score-item">Shape <span id="resultScoreObjL" class="result-score-val">0%</span></span>
+              <span class="result-score-item">Emotion <span id="resultScoreEmoL" class="result-score-val">0%</span></span>
+            </span>
+          </figcaption>
+        </figure>
+        <figure id="resultCardR" class="result-card">
+          <div class="winner-badge">Winner</div>
+          <div id="morphStageR" class="morph-stage">
+            <img id="resultOriginalR" class="morph-img morph-original" alt="Player 2 original result frame" />
+            <img id="resultImgR" class="morph-img morph-generated" alt="Player 2 infilled result" />
+          </div>
+          <figcaption>
+            <span class="result-player-name">Player 2</span>
+            <span class="result-scores">
+              <span class="result-score-item">Shape <span id="resultScoreObjR" class="result-score-val">0%</span></span>
+              <span class="result-score-item">Emotion <span id="resultScoreEmoR" class="result-score-val">0%</span></span>
+            </span>
+          </figcaption>
+        </figure>
+      </div>
+      <button id="playAgainBtn" class="play-again" type="button">Play Again</button>
+    </section>
+  </main>
+
+  <video id="preview" autoplay playsinline muted class="src-video"></video>
+  <canvas id="segInput" class="hidden"></canvas>
+
+  <script type="module" src="camera_main.js"></script>
+</body>
+</html>

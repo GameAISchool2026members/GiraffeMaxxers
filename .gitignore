@@ -1,0 +1,8 @@
+# personal captures and generated local output
+temp/
+test/
+.env
+
+# python cache
+__pycache__/
+*.pyc
