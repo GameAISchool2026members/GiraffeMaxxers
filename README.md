@@ -7,7 +7,6 @@ Desktop pywebview app for a two-player CLIP/emotion charades round.
 Install requirements.txt to an environment of your choice, then from the main directory run  ```camera_ui_main.py```
 
 
-```
 
 ## What It Does
 
@@ -31,3 +30,7 @@ effects as players cross each 10% score mark; a final-score popup
 class confidence, and normalized totals; winner vs. loser BFL prompt variants with
 giga-chad/low-aura keywords; and a YOLO segmentation fallback in the start-screen
 selector.
+
+## Team
+
+Panagiotis Tsakalakis, Eric Wang, James van der Pol, Tim Merino, Maria Edwards, and dical_gwt
