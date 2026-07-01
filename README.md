@@ -33,4 +33,4 @@ selector.
 
 ## Team
 
-Panagiotis Tsakalakis, Eric Wang, James van der Pol, Tim Merino, Maria Edwards, and dical_gwt
+Panagiotis Tsakalakis, Eric Wang, James van der Pol, Tim Merino, Maria Edwards, and Haoxuan Sun
